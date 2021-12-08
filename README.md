@@ -1,8 +1,3 @@
-![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/Javicadserres/drlearn?label=VERSION&style=for-the-badge)
-![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/Javicadserres/drlearn?style=for-the-badge)
-![GitHub issues](https://img.shields.io/github/issues/Javicadserres/drlearn?style=for-the-badge)
-
-
 # drlearn 
 Deep Reinforcement Learning implementation
 
