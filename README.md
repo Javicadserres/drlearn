@@ -1,5 +1,5 @@
 # drlearn 
-Deep Reinforcement Learning implementation
+Deep Reinforcement Learning implementation using numpy and gym.
 
 ## Installation
 Normal user:
