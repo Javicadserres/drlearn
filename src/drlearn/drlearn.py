@@ -1,8 +1,5 @@
 import numpy as np
 
-from itertools import count
-from utils import Memory
-
 
 class DRLearn:
     """Deep Reinforcement learning class.
@@ -28,6 +25,7 @@ class DRLearn:
         optim=None,
         loss=None,
         env=None,  
+        memory=None,
         epsilon=1, 
         gamma=0.9, 
         decay_rate=0.005, 
@@ -37,16 +35,18 @@ class DRLearn:
         self.optim = optim
         self.loss = loss
         self.env = env
+        self.memory = memory
         self.epsilon = epsilon
         self.gamma = gamma
         self.decay_rate = decay_rate
         self.min_epsilon = min_epsilon
-        self.memory = Memory(capacity=300)
+        self.n_states = self.env.observation_space.shape[0]
+        self.n_actions = self.env.action_space.n
 
     def take_action(self, state):
         """
-        Action taken by the model for a given state. Note that it can 
-        be chosen randomly as well for a given epsilon.
+        Action taken by the model for a given state. Note that it 
+        can be chosen randomly as well for a given epsilon.
 
         Parameters
         ----------
@@ -58,62 +58,79 @@ class DRLearn:
         action : int
             Action taken by the model.
         """
-        # random choice
-        if np.random.rand() < self.epsilon:
-            action = np.random.randint(self.n_actions)  
-        else:
+        if np.random.rand() > self.epsilon:
             pred = self.model.forward(state).T
             action = np.argmax(pred, axis=1)[0]
+        else:
+            action = np.random.randint(self.n_actions)  
 
         return action
 
-    def get_xy(self, steps_sample):
+    def get_target(self, steps_sample):
         """
-        
+        Gets the target that will be passed to the loss
+        function.
+
+        Parameters
+        ----------
+        steps_sample : list
+            List containing the main information of each step
+            (actual state, action, reward, new state, is finished).
+
+        Return
+        ------
+        targets : numpy.array
+            Array containing the output to be predicted by the 
+            model.
         """
-        
-        states = np.array([a[0] for a in steps_sample]).T
-        new_states = np.array([a[3] for a in steps_sample]).T
+        states, new_states = self._get_states(steps_sample)
 
-        Q = self.model.forward(states)
-        Q_new = self.model.forward(new_states)
+        quality_new = self.model.forward(new_states)
+        quality = self.model.forward(states)
 
-        sample_len = len(steps_sample)
-        X = np.zeros((sample_len, self.n_states))
-        y = np.zeros((sample_len, self.n_actions))
+        targets = np.zeros((len(steps_sample), self.n_actions))
         
         for num, params in enumerate(steps_sample):
-            state_r, action_r, reward_r, new_state_r, done_r = params
-
-            target = Q.T[num]
+            _, action_r, reward_r, _, done_r = params
+            target = quality.T[num]
             target[action_r] = reward_r
-            # If we're done the utility is simply the reward of executing action a in
-            # state s, otherwise we add the expected maximum future reward as well
+
             if not done_r:
-                target[action_r] += self.gamma * np.amax(Q_new.T[num])
+                future_reward = np.amax(quality_new.T[num])
+                target[action_r] += self.gamma * future_reward
 
-            X[num] = state_r
-            y[num] = target
+            targets[num] = target
 
-        return X.T, y.T
+        return states, targets.T
 
-    def play(self, batch_size):
+    def play(self):
+        """
+        The agent plays takes an action for each state until the
+        is finished.
+
+        Returns
+        -------
+        epoch_loss : int
+            Result of the loss function for the given game.
+        total_reward : int
+            Total reward for the game.
+        """
         state = self.env.reset()
         total_reward = 0
 
         epoch_loss = []
+        done = False
 
-        for num in count():
+        while not done:
             action = self.take_action(state.reshape(self.n_states, 1))
 
             new_state, reward, done, _ = self.env.step(action)
             step_list = [state, action, reward, new_state, done]
 
             self.memory.push(step_list)
-            steps_sample = self.memory.sample(batch_size)
+            steps_sample = self.memory.sample()
 
-            X, Y = self.get_xy(steps_sample)
-
+            X, Y = self.get_target(steps_sample)
             self.model.forward(X)
             cost = self.model.loss(Y, self.loss)
             self.model.backward()
@@ -124,40 +141,27 @@ class DRLearn:
             total_reward += reward
             state = new_state
 
-            if done: break
-
         epoch_loss = np.mean(epoch_loss)     
         
         return epoch_loss, total_reward
 
-    def train(self, n_epochs=500, batch_size=32):
-        self.epoch_losses = []
-        max_reward = 0
-        for epoch in range(n_epochs):
-            epoch_loss, total_reward = self.play(batch_size)
+    def update_epsilon(self, epoch):
+        """
+        Updates the parameter epsilon.
 
-            max_reward = max(max_reward, total_reward)
-            self.epsilon = self.min_epsilon + (1.0 - self.min_epsilon) * np.exp(-self.decay_rate * epoch)
-            self.epoch_losses.append(epoch_loss)
-            if epoch % 20 == 0:
-                print('loss: ', epoch_loss, 'max reward: ', max_reward, 'epoch: ', epoch)
-            
-            if total_reward==500:
-                break
+        Parameters
+        ----------
+        epoch : int
+        """
+        _exp = np.exp(-self.decay_rate * epoch)
+        _mult = (1.0 - self.min_epsilon) * _exp
+        self.epsilon = self.min_epsilon + _mult
 
+    def _get_states(self, steps_sample):
+        """
+        Gets the new and actual states from the steps list.
+        """
+        states = np.array([a[0] for a in steps_sample]).T
+        new_states = np.array([a[3] for a in steps_sample]).T
 
-    def play_game(self, n_epochs=10):
-        # self.env = gym.wrappers.Monitor(self.env, '/tmp/cartpole-experiment-1', force=True)
-        for epoch in range(n_epochs):
-            state = self.env.reset()
-            total_reward = 0
-            while True:
-                self.env.render()
-                state = state.reshape(self.n_states, 1)
-                action = np.argmax(self.model.forward(state).T, axis=1)[0]
-                state, reward, done, _ = self.env.step(action)
-                total_reward += reward
-                if done: break
-            print ("%d Reward: %s" % (epoch, total_reward))
-
-        self.env.close()
+        return states, new_states

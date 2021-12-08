@@ -13,9 +13,10 @@ class Memory:
     memory : list
         List containing the enviroment steps.
     """
-    def __init__(self, capacity):
+    def __init__(self, capacity, sample_size=32):
         self.capacity = capacity
         self.memory = []
+        self.sample_size = sample_size
 
     def push(self, step_env):
         """Save a new step in the memory.
@@ -31,7 +32,7 @@ class Memory:
         if drop_condition:
             self.memory.pop(0)
 
-    def sample(self, batch_size):
+    def sample(self):
         """Returns a sample of the steps saved.
 
         Parameters
@@ -39,6 +40,6 @@ class Memory:
         batch_size : int
             Length of the sample.
         """
-        batch_size = min(batch_size, len(self.memory))
+        batch_size = min(self.sample_size, len(self.memory))
 
         return random.sample(self.memory, batch_size)
