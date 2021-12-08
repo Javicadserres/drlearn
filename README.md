@@ -17,6 +17,7 @@ pip install drlearn/. -r drlearn/requirements.txt
 ## Usage
 
 Example game *'CartPole-v1'*
+
 ![gym_animation](img/gym_animation.gif)
 
 
